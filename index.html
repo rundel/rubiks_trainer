@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cube Coach</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <button class="brand" data-go="home" title="Home">
+      <span class="logo" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+      Cube Coach
+    </button>
+    <div class="topbar-actions">
+      <button class="btn ghost small" id="topRescan" hidden>Rescan my cube</button>
+      <button class="btn ghost small" data-go="learn">Learn the moves</button>
+    </div>
+  </header>
+
+  <!-- HOME -->
+  <section class="screen" id="home">
+    <div class="hero">
+      <div id="heroCube" class="hero-cube"></div>
+      <div>
+        <h1>Let's solve your cube!</h1>
+        <p class="lead">Show me your Rubik's Cube with the camera. I'll teach you how to solve it, one step at a time, and explain why every move works.</p>
+      </div>
+    </div>
+    <div class="cards">
+      <button class="card big" id="goScan">
+        <span class="card-icon">📷</span>
+        <strong>Scan my cube</strong>
+        <span>Show each side to the camera</span>
+      </button>
+      <button class="card" id="goManual">
+        <span class="card-icon">🎨</span>
+        <strong>Paint the colors</strong>
+        <span>No camera? Tap in the colors yourself</span>
+      </button>
+      <button class="card" id="goPractice">
+        <span class="card-icon">🎲</span>
+        <strong>Practice scramble</strong>
+        <span>Mix up a solved cube with my moves</span>
+      </button>
+      <button class="card" data-go="learn">
+        <span class="card-icon">🧭</span>
+        <strong>Learn the moves</strong>
+        <span>What do R, U and F' mean?</span>
+      </button>
+    </div>
+    <button class="link" id="resumeBtn" hidden>Continue where you left off</button>
+    <p><button class="link" id="homeTest">Camera color test</button></p>
+  </section>
+
+  <!-- SCAN -->
+  <section class="screen" id="scan" hidden>
+    <div class="scan-layout">
+      <div class="video-wrap">
+        <canvas id="videoCanvas"></canvas>
+        <div class="video-msg" id="videoMsg">Starting the camera...</div>
+        <div class="flash" id="flash"></div>
+      </div>
+      <aside class="panel scan-panel" id="testPanel" hidden>
+        <div class="scan-step-num">Color test</div>
+        <h2>Test one side</h2>
+        <ol class="how-list scan-text">
+          <li>Show the side with the <span class="chip chip-W">white</span> center square and press Calibrate.</li>
+          <li>Show any side and press Capture.</li>
+        </ol>
+        <p class="note-why"><b>Why calibrate?</b> Calibrate only looks at the center square. It is known to be white, so it shows me how your camera tints colors.</p>
+        <p class="hint" id="testCalib"></p>
+        <div class="btn-row">
+          <button class="btn ghost" id="testCalibrate">⚪ Calibrate (white center)</button>
+          <button class="btn primary huge" id="testCapture">📸 Capture <kbd>space</kbd></button>
+        </div>
+        <p class="hint">After a capture, turn the cube around and look at that side yourself: the grid below is laid out the same way.</p>
+        <div id="testResult"></div>
+        <div class="btn-row">
+          <button class="btn ghost" id="testCopy" disabled>Copy results</button>
+          <button class="btn ghost" id="testExit">Done testing</button>
+        </div>
+        <textarea id="testText" class="test-text" readonly hidden></textarea>
+      </aside>
+      <aside class="panel scan-panel" id="scanPanel">
+        <div class="scan-step-num" id="scanStepNum">Side 1 of 6</div>
+        <h2 id="scanTitle">Show the green side</h2>
+        <div class="scan-illus">
+          <div id="scanIllus"></div>
+        </div>
+        <div id="scanText" class="scan-text"></div>
+        <div class="scan-warn" id="scanWarn" hidden></div>
+        <div class="scan-confirm" id="scanConfirm" hidden>
+          <p><b>Check the colors.</b> I froze the picture. Does every dot match the sticker it sits on?</p>
+          <div class="btn-row">
+            <button class="btn primary" id="confirmYes">✓ Yes, save it <kbd>space</kbd></button>
+            <button class="btn ghost" id="confirmNo">✗ No, try again</button>
+          </div>
+        </div>
+        <div class="btn-row">
+          <button class="btn primary huge" id="scanCalibrate" hidden>⚪ Calibrate <kbd>space</kbd></button>
+          <button class="btn primary huge" id="captureBtn">📸 Capture <kbd>space</kbd></button>
+        </div>
+        <div class="btn-row">
+          <button class="btn ghost" id="scanBack">◀ Redo last side</button>
+        </div>
+        <ul class="tips">
+          <li>The dots show the colors I see. If one is wrong, don't worry: you can fix it at the end.</li>
+          <li>Bright, even light works best, like daylight from a window.</li>
+          <li>Avoid shiny glare. It makes red and orange hard to tell apart.</li>
+        </ul>
+        <div class="scan-thumbs" id="scanThumbs"></div>
+        <details class="cam-settings">
+          <summary>Camera settings</summary>
+          <label>Camera <select id="camSelect"></select></label>
+          <label class="check"><input type="checkbox" id="mirrorChk" checked> Mirror picture</label>
+          <label class="check"><input type="checkbox" id="debugChk"> Show color numbers (for testing)</label>
+          <button class="link" id="testStart">Color test with one side</button>
+        </details>
+      </aside>
+    </div>
+  </section>
+
+  <!-- REVIEW -->
+  <section class="screen" id="review" hidden>
+    <div class="review-layout">
+      <div class="panel">
+        <h2 id="reviewTitle">Check the colors</h2>
+        <div id="reviewIntro" class="lead small"></div>
+        <div class="net" id="net"></div>
+        <div class="review-status" id="reviewStatus"></div>
+        <p class="hint" id="saveScanRow" hidden>Testing: first fix every square so it matches the real cube, then <button class="link" id="saveScan">save scan data</button>.</p>
+        <div class="btn-row">
+          <button class="btn ghost" id="reviewRescan">📷 Scan again</button>
+          <button class="btn primary huge" id="solveBtn">Teach me to solve it ▶</button>
+        </div>
+      </div>
+      <div class="panel preview-panel">
+        <div id="reviewCube"></div>
+        <p class="hint center">Drag the cube to look around. Does it match yours?</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- PRACTICE -->
+  <section class="screen" id="practice" hidden>
+    <div class="review-layout">
+      <div class="panel">
+        <h2>Practice scramble</h2>
+        <ol class="how-list lead small">
+          <li>Start with a solved cube.</li>
+          <li>Hold it with the <span class="chip chip-W">white</span> center on top and the <span class="chip chip-G">green</span> center facing you.</li>
+          <li>Do these moves:</li>
+        </ol>
+        <div class="moves-list" id="scrambleMoves"></div>
+        <div class="btn-row">
+          <button class="btn ghost" id="newScramble">🎲 New scramble</button>
+          <button class="btn ghost" id="showScramble">▶ Show me</button>
+          <button class="btn primary huge" id="practiceSolve">I'm done, teach me ▶</button>
+        </div>
+      </div>
+      <div class="panel preview-panel"><div id="practiceCube"></div></div>
+    </div>
+  </section>
+
+  <!-- SOLVE -->
+  <section class="screen" id="solve" hidden>
+    <ol class="stages" id="stageBar"></ol>
+    <div class="solve-layout">
+      <div class="panel cube-panel">
+        <div id="solveCube"></div>
+        <div class="view-row">
+          <button class="btn ghost small" id="viewFront">Front view</button>
+          <button class="btn ghost small" id="viewBack">Peek at the back</button>
+          <label class="speed">Speed <input type="range" id="speed" min="0.3" max="2.5" step="0.1" value="1"></label>
+        </div>
+        <div class="mismatch">
+          Your cube doesn't look like this?
+          <button class="link" id="solveRescan">Rescan it</button> or
+          <button class="link" id="solveFix">fix the colors</button>
+        </div>
+      </div>
+      <div class="panel step-panel" id="stepPanel"></div>
+    </div>
+  </section>
+
+  <!-- LEARN -->
+  <section class="screen" id="learn" hidden>
+    <div class="review-layout">
+      <div class="panel">
+        <h2>Learn the moves</h2>
+        <p class="lead small">Each letter means one side of the cube. Hold the cube still and look at the front.</p>
+        <ul class="notation-list">
+          <li><b>R</b> right, <b>L</b> left, <b>U</b> up (top), <b>D</b> down (bottom), <b>F</b> front, <b>B</b> back.</li>
+          <li>A letter alone means turn that side <em>clockwise</em>, as if you were looking straight at that side.</li>
+          <li>A little dash (<b>'</b>, say "prime") means turn it the other way.</li>
+          <li>A <b>2</b> means turn it twice (a half turn).</li>
+        </ul>
+        <div class="learn-grid" id="learnGrid"></div>
+        <div class="btn-row">
+          <button class="btn ghost" id="learnReset">Reset cube</button>
+        </div>
+      </div>
+      <div class="panel preview-panel">
+        <div id="learnCube"></div>
+        <p class="hint center" id="learnCaption">Tap a move to see it.</p>
+      </div>
+    </div>
+  </section>
+
+  <div class="confetti" id="confetti"></div>
+
+  <script src="js/cube.js"></script>
+  <script src="js/solver.js"></script>
+  <script src="js/cube3d.js"></script>
+  <script src="js/scanner.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
