@@ -19,6 +19,7 @@ Then open http://localhost:8000 in Chrome, Edge, Safari, or Firefox. Opening `in
 ## Features
 
 - Guided scan: six sides in a fixed order, with a picture showing how to hold the cube for each one. A live overlay shows the colors it sees.
+- Cube tracking: the grid finds the cube face in the picture and follows it as it moves or tilts, smoothed so it does not jitter. Once the cube is held still for a moment (a ring fills up), the picture is taken by itself, using the median colors over the still frames. Auto capture can be turned off; if the cube is not found, the fixed dashed grid and the Capture button work as before.
 - Color calibration: sticker colors are matched against the six scanned centers, so it adapts to the lighting. Tap any square on the review screen to fix a misread color.
 - Validation and auto-repair: it checks that the scan is a real, solvable cube (piece colors, twisted corners, flipped edges, parity) and automatically fixes common scanning mistakes such as left and right swapped, or the top or bottom held turned.
 - Rescan at any time: "Rescan my cube" is always in the top bar while solving, and a whole new plan is worked out from wherever the cube is now. "Fix the colors" lets you edit the current state directly.
@@ -35,8 +36,8 @@ Then open http://localhost:8000 in Chrome, Edge, Safari, or Firefox. Opening `in
 | `css/style.css`    | Styling                                                  |
 | `js/cube.js`       | Cube model, moves (derived from 3D geometry), validation |
 | `js/solver.js`     | Beginner-method solver with explanations                 |
-| `js/scanner.js`    | Webcam sampling and color classification                 |
-| `js/cube3d.js`     | CSS 3D cube with animated turns                          |
+| `js/scanner.js`    | Webcam sampling, cube tracking, and color classification |
+| `js/cube3d.js`     | Canvas 3D cube with animated turns                       |
 | `js/app.js`        | UI flow                                                  |
 | `tests/`           | Node tests for the solver and the color classifier       |
 
@@ -50,4 +51,5 @@ node tests/realcapture.test.js   # a real webcam capture with a strong blue tint
 node tests/repair.test.js        # auto-repair of sides scanned turned or swapped
 node tests/anyway.test.js        # every side held any way up, with a blue camera tint
 node tests/replay.js             # score classifiers on saved real scans in tests/scans
+node tests/tracking.test.js      # finding and following a cube face in synthetic camera pictures
 ```

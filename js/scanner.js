@@ -305,6 +305,221 @@
     return null;
   }
 
+  // ---------- Finding the cube face in the picture ----------
+  // The picture is reduced to brightness (the largest of r, g, b, so blue and red stickers count as
+  // bright). A face is a 3x3 grid of bright, even cells separated by dark lines. The dark lines are
+  // widened with a minimum filter scaled to the grid size, so a guess that is a little off still
+  // lands on them. Grid: center cx, cy, width s, height s * asp, turned by angle a (radians).
+  function brightnessMap(rgba, w, h) {
+    const v = new Float32Array(w * h);
+    for (let i = 0, p = 0; i < w * h; i++, p += 4) v[i] = Math.max(rgba[p], rgba[p + 1], rgba[p + 2]);
+    return { v, w, h, eroded: {} };
+  }
+
+  function eroded(img, r) {
+    if (img.eroded[r]) return img.eroded[r];
+    const { v, w, h } = img;
+    const tmp = new Float32Array(w * h), out = new Float32Array(w * h);
+    for (let y = 0; y < h; y++) {
+      const row = y * w;
+      for (let x = 0; x < w; x++) {
+        let m = 255;
+        for (let k = Math.max(0, x - r); k <= Math.min(w - 1, x + r); k++) if (v[row + k] < m) m = v[row + k];
+        tmp[row + x] = m;
+      }
+    }
+    for (let x = 0; x < w; x++) {
+      for (let y = 0; y < h; y++) {
+        let m = 255;
+        for (let k = Math.max(0, y - r); k <= Math.min(h - 1, y + r); k++) if (tmp[k * w + x] < m) m = tmp[k * w + x];
+        out[y * w + x] = m;
+      }
+    }
+    img.eroded[r] = out;
+    return out;
+  }
+  const radiusFor = (s) => Math.max(1, Math.min(8, Math.round(s * 0.045)));
+
+  // Sample points in grid units (one cell = 1, grid center = 0): cell interiors, the lines between
+  // cells, and the outer border, one list per side, so a side that is not dark (the grid is off by
+  // a row) can be told apart from one partly covered by fingers.
+  function gridPoints(fast) {
+    const offs = fast ? [[0, 0], [-0.2, -0.2], [0.2, -0.2], [-0.2, 0.2], [0.2, 0.2]]
+      : [-0.22, 0, 0.22].flatMap((a) => [-0.22, 0, 0.22].map((b) => [a, b]));
+    const cells = [];
+    for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) cells.push(offs.map(([du, dv]) => [c - 1 + du, r - 1 + dv]));
+    const lines = [];
+    const along = fast ? [0] : [-0.28, 0, 0.28];
+    for (const k of [-0.5, 0.5]) for (let j = -1; j <= 1; j++) for (const t of along) lines.push([k, j + t], [j + t, k]);
+    const sides = [[], [], [], []];
+    const around = fast ? [-0.25, 0.25] : [-0.3, 0, 0.3];
+    for (let j = -1; j <= 1; j++) for (const t of around) {
+      sides[0].push([-1.5, j + t]);
+      sides[1].push([1.5, j + t]);
+      sides[2].push([j + t, -1.5]);
+      sides[3].push([j + t, 1.5]);
+    }
+    return { cells, lines, sides };
+  }
+  const PTS_FAST = gridPoints(true), PTS_FULL = gridPoints(false);
+
+  function scoreGrid(img, p, fast, radius) {
+    const { w, h } = img;
+    const v = eroded(img, radius || radiusFor(p.s));
+    const pts = fast ? PTS_FAST : PTS_FULL;
+    const qx = p.s / 3, qy = (p.s * p.asp) / 3;
+    const ca = Math.cos(p.a), sa = Math.sin(p.a);
+    const at = (gu, gv) => {
+      const u = gu * qx, vv = gv * qy;
+      const x = Math.round(p.cx + u * ca - vv * sa), y = Math.round(p.cy + u * sa + vv * ca);
+      if (x < 0 || y < 0 || x >= w || y >= h) return -1;
+      return v[y * w + x];
+    };
+    // Quick test first: cell centers must be clearly brighter than the lines between them.
+    let lsum = 0;
+    for (const [gu, gv] of pts.lines) {
+      const val = at(gu, gv);
+      if (val < 0) return null;
+      lsum += val;
+    }
+    const line = lsum / pts.lines.length;
+    if (fast) {
+      let csum = 0;
+      for (const cell of pts.cells) {
+        const val = at(cell[0][0], cell[0][1]);
+        if (val < 0) return null;
+        csum += val;
+      }
+      if (csum / 9 - line < 30) return null;
+    }
+    let worst = 0;
+    for (const side of pts.sides) {
+      const vals = [];
+      for (const [gu, gv] of side) {
+        const val = at(gu, gv);
+        if (val < 0) return null;
+        vals.push(val);
+      }
+      vals.sort((x, y) => x - y);
+      worst = Math.max(worst, vals[Math.floor(vals.length * 0.4)]);
+    }
+    let total = 0, sdSum = 0, bright = 0;
+    for (const cell of pts.cells) {
+      let s1 = 0, s2 = 0;
+      for (const [gu, gv] of cell) {
+        const val = at(gu, gv);
+        if (val < 0) return null;
+        s1 += val;
+        s2 += val * val;
+      }
+      const m = s1 / cell.length;
+      const sd = Math.sqrt(Math.max(0, s2 / cell.length - m * m));
+      const con = m - line;
+      total += Math.max(-40, Math.min(80, con));
+      sdSum += sd;
+      if (con > 18) bright++;
+    }
+    const score = total / 9 - 0.6 * (sdSum / 9) - 0.7 * Math.max(0, worst - line);
+    return { score, bright, line };
+  }
+
+  const FOUND_SCORE = 32, KEEP_SCORE = 22;
+
+  function normAngle(p) {
+    const q = Object.assign({}, p);
+    while (q.a > Math.PI / 4) { q.a -= Math.PI / 2; q.asp = 1 / q.asp; q.s /= q.asp; }
+    while (q.a < -Math.PI / 4) { q.a += Math.PI / 2; q.asp = 1 / q.asp; q.s /= q.asp; }
+    return q;
+  }
+
+  // Polish a guess by trying small changes to each setting, halving the steps when nothing helps.
+  function refineGrid(img, p0, rounds, radius) {
+    radius = radius || radiusFor(p0.s);
+    let best = { cx: p0.cx, cy: p0.cy, s: p0.s, a: p0.a, asp: p0.asp };
+    let bs = scoreGrid(img, best, false, radius);
+    if (!bs) return null;
+    let st = { cx: p0.s * 0.06, cy: p0.s * 0.06, s: 0.06, a: 0.08, asp: 0.06 };
+    for (let round = 0; round < (rounds || 4); round++) {
+      let improved = true, guard = 0;
+      while (improved && guard++ < 10) {
+        improved = false;
+        for (const key of ['cx', 'cy', 's', 'a', 'asp']) {
+          for (const dir of [-1, 1]) {
+            const q = Object.assign({}, best);
+            if (key === 's') q.s *= 1 + dir * st.s;
+            else if (key === 'asp') q.asp = Math.max(0.7, Math.min(1.43, q.asp * (1 + dir * st.asp)));
+            else q[key] += dir * st[key];
+            const r = scoreGrid(img, q, false, radius);
+            if (r && r.score > bs.score) { best = q; bs = r; improved = true; }
+          }
+        }
+      }
+      st = { cx: st.cx / 2, cy: st.cy / 2, s: st.s / 2, a: st.a / 2, asp: st.asp / 2 };
+    }
+    return Object.assign(normAngle(best), bs);
+  }
+  // Coarse polish with wide lines, then a fine one with narrow lines.
+  function polishGrid(img, p0) {
+    const wide = radiusFor(p0.s);
+    const r = refineGrid(img, p0, 3, wide);
+    if (!r || wide <= 1) return r;
+    const fine = refineGrid(img, r, 3, Math.max(1, Math.round(wide / 2)));
+    // Report the score on the wide lines so the found and lost thresholds stay comparable.
+    const ws = fine && scoreGrid(img, fine, false, radiusFor(fine.s));
+    return ws ? Object.assign(fine, ws) : r;
+  }
+
+  const COARSE_ANGLES = [0, -0.2, 0.2, -0.4, 0.4];
+
+  // Look for a face anywhere near the middle of the picture, then polish the best few guesses.
+  function findGrid(img) {
+    const { w, h } = img;
+    const cands = [];
+    for (let s = h * 0.3; s <= h * 0.95; s *= 1.1) {
+      const step = Math.max(2, s / 15);
+      for (let cy = h * 0.2; cy <= h * 0.8; cy += step) {
+        for (let cx = w * 0.2; cx <= w * 0.8; cx += step) {
+          for (const a of COARSE_ANGLES) {
+            const p = { cx, cy, s, a, asp: 1 };
+            const r = scoreGrid(img, p, true);
+            if (r && r.bright >= 7) cands.push({ p, score: r.score });
+          }
+        }
+      }
+    }
+    cands.sort((x, y) => y.score - x.score);
+    const picked = [];
+    for (const c of cands) {
+      if (picked.length >= 3) break;
+      if (picked.some((q) => Math.hypot(q.p.cx - c.p.cx, q.p.cy - c.p.cy) < c.p.s * 0.2)) continue;
+      picked.push(c);
+    }
+    let best = null;
+    for (const c of picked) {
+      const r = polishGrid(img, c.p);
+      if (r && (!best || r.score > best.score)) best = r;
+    }
+    return best;
+  }
+
+  // Follow a face from the last frame; search afresh if it is lost (or when asked to).
+  function trackGrid(img, prev, allowSearch) {
+    if (prev) {
+      const r = polishGrid(img, prev);
+      if (r && r.score >= KEEP_SCORE && r.bright >= 7) return Object.assign(r, { found: true });
+    }
+    if (allowSearch === false) return null;
+    const r = findGrid(img);
+    if (r && r.score >= FOUND_SCORE && r.bright >= 8) return Object.assign(r, { found: true });
+    return r ? Object.assign(r, { found: false }) : null;
+  }
+
+  // Where cell (r, c) of a grid sits in the picture.
+  function cellCenter(p, r, c) {
+    const u = (c - 1) * (p.s / 3), v = (r - 1) * ((p.s * p.asp) / 3);
+    return [p.cx + u * Math.cos(p.a) - v * Math.sin(p.a), p.cy + u * Math.sin(p.a) + v * Math.cos(p.a)];
+  }
+
   class Scanner {
     constructor(canvas) {
       this.canvas = canvas;
@@ -315,6 +530,13 @@
       this.mirror = true;
       this.samples = null;
       this.running = false;
+      this.buffer = [];
+      this.steadyMs = 0;
+      this.progress = 0;
+      this.armed = true;
+      this.autoCapture = false;
+      this.holdMs = 700;
+      this.onSteady = null;
     }
 
     async start(deviceId) {
@@ -367,6 +589,40 @@
       }
     }
 
+    // Find the face in a small copy of the picture, follow it from frame to frame, and smooth its
+    // position so the grid does not jitter. Returns the grid in canvas pixels, or null.
+    track(W, H) {
+      const dw = DETECT_WIDTH, dh = Math.round((DETECT_WIDTH * H) / W);
+      if (!this.det) {
+        this.det = document.createElement('canvas');
+        this.dctx = this.det.getContext('2d', { willReadFrequently: true });
+      }
+      if (this.det.width !== dw || this.det.height !== dh) { this.det.width = dw; this.det.height = dh; }
+      this.dctx.drawImage(this.canvas, 0, 0, W, H, 0, 0, dw, dh);
+      const img = brightnessMap(this.dctx.getImageData(0, 0, dw, dh).data, dw, dh);
+      this.frameNo = (this.frameNo || 0) + 1;
+      // A full search costs more than following, so while lost only search every few frames.
+      const r = trackGrid(img, this.raw, !this.raw && this.frameNo % 3 === 0);
+      if (r && r.found) {
+        this.raw = r;
+        this.missed = 0;
+        const sm = this.smooth;
+        const jump = !sm || Math.hypot(r.cx - sm.cx, r.cy - sm.cy) > sm.s * 0.3 || Math.abs(r.s - sm.s) > sm.s * 0.25 || Math.abs(r.a - sm.a) > 0.3;
+        const k = 0.4;
+        this.smooth = jump ? { cx: r.cx, cy: r.cy, s: r.s, a: r.a, asp: r.asp } : {
+          cx: sm.cx + (r.cx - sm.cx) * k, cy: sm.cy + (r.cy - sm.cy) * k, s: sm.s + (r.s - sm.s) * k,
+          a: sm.a + (r.a - sm.a) * k, asp: sm.asp + (r.asp - sm.asp) * k,
+        };
+      } else {
+        this.raw = null;
+        // Hold on to the last position for a few frames so a brief miss does not flicker.
+        if (++this.missed > 6) this.smooth = null;
+      }
+      if (!this.smooth) return null;
+      const f = W / dw, g = this.smooth;
+      return { cx: g.cx * f, cy: g.cy * f, s: g.s * f, a: g.a, asp: g.asp, live: !!this.raw };
+    }
+
     frame() {
       const v = this.video;
       if (!v.videoWidth) return;
@@ -378,44 +634,113 @@
       ctx.drawImage(v, 0, 0, W, H);
       ctx.restore();
 
-      const size = Math.min(W, H) * 0.62;
-      const x0 = (W - size) / 2, y0 = (H - size) / 2, cell = size / 3;
-      const img = ctx.getImageData(Math.floor(x0), Math.floor(y0), Math.ceil(size), Math.ceil(size)).data;
-      const stride = Math.ceil(size);
-      const samples = new Array(9);
-      for (let r = 0; r < 3; r++) {
-        for (let c = 0; c < 3; c++) {
-          const cx = (c + 0.5) * cell, cy = (r + 0.5) * cell, half = cell * 0.18;
-          const rs = [], gs = [], bs = [];
-          for (let yy = Math.floor(cy - half); yy < cy + half; yy += 2) {
-            for (let xx = Math.floor(cx - half); xx < cx + half; xx += 2) {
-              const p = (yy * stride + xx) * 4;
-              rs.push(img[p]); gs.push(img[p + 1]); bs.push(img[p + 2]);
-            }
-          }
-          const med = (a) => { a.sort((m, n) => m - n); return a[a.length >> 1]; };
-          const raw = [med(rs), med(gs), med(bs)];
-          const rgb = applyGains(raw, this.gains);
-          // On a mirrored picture, the displayed column c is column 2 - c of the real face.
-          const fc = this.mirror ? 2 - c : c;
-          samples[r * 3 + fc] = { rgb: raw, lab: rgbToLab(raw), guess: guessColor(rgb, this.roBoundary), disp: [r, c] };
-        }
-      }
-      this.samples = samples;
+      const now = performance.now();
+      const gap = this.lastT ? now - this.lastT : 0;
+      this.lastT = now;
 
-      ctx.lineWidth = Math.max(3, size / 90);
-      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+      let grid = null;
+      try { grid = this.track(W, H); } catch (e) { grid = null; }
+      const tracked = !!grid;
+      const guide = Math.min(W, H) * 0.62;
+      if (!grid) grid = { cx: W / 2, cy: H / 2, s: guide, a: 0, asp: 1 };
+      const qx = grid.s / 3, qy = (grid.s * grid.asp) / 3;
+
+      // Sample a small patch in the middle of each cell (median, so stray pixels do not matter).
+      const centers = [];
+      for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) centers.push(cellCenter(grid, r, c));
+      const half = Math.max(2, Math.min(qx, qy) * 0.16);
+      const bx0 = Math.max(0, Math.floor(Math.min(...centers.map((p) => p[0])) - half));
+      const by0 = Math.max(0, Math.floor(Math.min(...centers.map((p) => p[1])) - half));
+      const bx1 = Math.min(W, Math.ceil(Math.max(...centers.map((p) => p[0])) + half + 1));
+      const by1 = Math.min(H, Math.ceil(Math.max(...centers.map((p) => p[1])) + half + 1));
+      const bw = Math.max(1, bx1 - bx0), bh = Math.max(1, by1 - by0);
+      const img = ctx.getImageData(bx0, by0, bw, bh).data;
+      const step = Math.max(1, Math.round(half / 6));
+      const samples = new Array(9);
+      centers.forEach(([x, y], k) => {
+        const r = Math.floor(k / 3), c = k % 3;
+        const rs = [], gs = [], bs = [];
+        for (let yy = Math.round(y - half); yy <= y + half; yy += step) {
+          for (let xx = Math.round(x - half); xx <= x + half; xx += step) {
+            const px = xx - bx0, py = yy - by0;
+            if (px < 0 || py < 0 || px >= bw || py >= bh) continue;
+            const p = (py * bw + px) * 4;
+            rs.push(img[p]); gs.push(img[p + 1]); bs.push(img[p + 2]);
+          }
+        }
+        const raw = rs.length ? [median(rs), median(gs), median(bs)] : [0, 0, 0];
+        // On a mirrored picture, the displayed column c is column 2 - c of the real face.
+        const fc = this.mirror ? 2 - c : c;
+        samples[r * 3 + fc] = { rgb: raw, lab: rgbToLab(raw), guess: guessColor(applyGains(raw, this.gains), this.roBoundary), disp: [r, c] };
+      });
+      this.samples = samples;
+      this.updateSteady(grid, tracked, gap);
+      this.drawOverlay(grid, tracked, samples);
+    }
+
+    // Track how long the cube has been held still. Colors seen while still are kept, so a capture
+    // can use the median of several frames instead of one possibly blurred frame.
+    updateSteady(grid, tracked, gap) {
+      const prev = this.lastGrid;
+      this.lastGrid = tracked ? grid : null;
+      const labs = this.samples.map((s) => s.lab);
+      let still = tracked && prev && gap < 250;
+      if (still) {
+        const move = Math.hypot(grid.cx - prev.cx, grid.cy - prev.cy) / grid.s + Math.abs(grid.s - prev.s) / grid.s + Math.abs(grid.a - prev.a);
+        still = move < 0.025;
+      }
+      if (still && this.buffer.length) {
+        const ref = this.buffer[this.buffer.length - 1].labs;
+        still = labs.every((l, k) => labDist(l, ref[k]) < 14);
+      }
+      if (still) {
+        this.steadyMs += gap;
+        this.buffer.push({ rgb: this.samples.map((s) => s.rgb), labs });
+        if (this.buffer.length > 15) this.buffer.shift();
+      } else {
+        this.steadyMs = 0;
+        this.buffer = [{ rgb: this.samples.map((s) => s.rgb), labs }];
+      }
+
+      // After a capture, wait until a different side is shown (or the cube leaves the picture).
+      if (!this.armed) {
+        this.awayMs = tracked ? 0 : (this.awayMs || 0) + gap;
+        const center = labs[4];
+        if (this.awayMs > 500 || (tracked && this.refLab && labDist(center, this.refLab) > 22)) this.armed = true;
+        if (this.armed) this.steadyMs = 0;
+      }
+      this.progress = this.autoCapture && this.armed && tracked ? Math.min(1, this.steadyMs / this.holdMs) : 0;
+      if (this.progress >= 1 && this.onSteady) {
+        this.armed = false;
+        this.refLab = labs[4];
+        this.onSteady();
+      }
+    }
+
+    drawOverlay(grid, tracked, samples) {
+      const ctx = this.ctx;
+      const qx = grid.s / 3, qy = (grid.s * grid.asp) / 3, cell = Math.min(qx, qy);
+      const H = this.canvas.height, W = this.canvas.width;
+      ctx.save();
+      ctx.translate(grid.cx, grid.cy);
+      ctx.rotate(grid.a);
+      ctx.lineWidth = Math.max(3, grid.s / 90);
+      const done = this.progress >= 1;
+      ctx.strokeStyle = tracked ? (done ? 'rgba(43,212,125,0.95)' : 'rgba(255,255,255,0.95)') : 'rgba(255,255,255,0.7)';
       ctx.shadowColor = 'rgba(0,0,0,0.6)';
       ctx.shadowBlur = 6;
+      if (!tracked) ctx.setLineDash([cell * 0.12, cell * 0.1]);
       for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) {
-        roundRect(ctx, x0 + c * cell + cell * 0.06, y0 + r * cell + cell * 0.06, cell * 0.88, cell * 0.88, cell * 0.14);
+        roundRect(ctx, (c - 1.5) * qx + qx * 0.06, (r - 1.5) * qy + qy * 0.06, qx * 0.88, qy * 0.88, cell * 0.14);
         ctx.stroke();
       }
-      ctx.shadowBlur = 0;
+      ctx.restore();
+
       for (const s of samples) {
         const [r, c] = s.disp;
+        const [x, y] = cellCenter(grid, r, c);
         ctx.beginPath();
-        ctx.arc(x0 + (c + 0.5) * cell, y0 + (r + 0.5) * cell, cell * 0.16, 0, Math.PI * 2);
+        ctx.arc(x, y, cell * 0.16, 0, Math.PI * 2);
         ctx.fillStyle = C.COLOR_HEX[s.guess];
         ctx.fill();
         ctx.lineWidth = 3;
@@ -424,23 +749,69 @@
         if (this.debug) {
           const [h, sat, val] = rgbToHsv(applyGains(s.rgb, this.gains));
           const wh = h > 180 ? h - 360 : h;
-          const x = x0 + (c + 0.5) * cell, y = y0 + (r + 0.5) * cell + cell * 0.32;
           ctx.font = `bold ${Math.round(cell * 0.13)}px ui-monospace, Menlo, monospace`;
           ctx.textAlign = 'center';
           const txt = `h${wh.toFixed(0)} s${(sat * 100).toFixed(0)} v${(val * 100).toFixed(0)}`;
           ctx.lineWidth = 4;
           ctx.strokeStyle = '#000';
-          ctx.strokeText(txt, x, y);
+          ctx.strokeText(txt, x, y + cell * 0.32);
           ctx.fillStyle = '#fff';
-          ctx.fillText(txt, x, y);
+          ctx.fillText(txt, x, y + cell * 0.32);
         }
+      }
+
+      // A ring around the middle dot fills up while the cube is held still.
+      if (this.progress > 0) {
+        ctx.beginPath();
+        ctx.arc(grid.cx, grid.cy, cell * 0.27, -Math.PI / 2, -Math.PI / 2 + this.progress * Math.PI * 2);
+        ctx.lineWidth = Math.max(5, cell * 0.08);
+        ctx.lineCap = 'round';
+        ctx.strokeStyle = '#2bd47d';
+        ctx.stroke();
+        ctx.lineCap = 'butt';
+      }
+
+      const msg = !tracked ? 'Looking for your cube...' : this.autoCapture && this.armed ? 'Hold still...' : '';
+      if (msg) {
+        const fs = Math.round(H * 0.045);
+        ctx.font = `700 ${fs}px ui-rounded, system-ui, sans-serif`;
+        ctx.textAlign = 'center';
+        const tw = ctx.measureText(msg).width;
+        ctx.fillStyle = 'rgba(0,0,0,0.55)';
+        roundRect(ctx, W / 2 - tw / 2 - fs * 0.6, fs * 0.5, tw + fs * 1.2, fs * 1.6, fs * 0.8);
+        ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.fillText(msg, W / 2, fs * 1.65);
       }
     }
 
+    // Wait for a different side before taking a picture by itself again.
+    disarm() {
+      this.armed = false;
+      this.awayMs = 0;
+      this.refLab = this.samples ? this.samples[4].lab : null;
+    }
+
+    arm() {
+      this.armed = true;
+      this.steadyMs = 0;
+    }
+
+    // The colors of the current side: the median over the frames the cube was held still.
     capture() {
-      return this.samples ? this.samples.map((s) => ({ rgb: s.rgb, lab: s.lab, guess: s.guess, disp: s.disp })) : null;
+      if (!this.samples) return null;
+      const buf = this.buffer.length >= 3 ? this.buffer : [{ rgb: this.samples.map((s) => s.rgb) }];
+      const out = this.samples.map((s, k) => {
+        const rgb = [0, 1, 2].map((ch) => median(buf.map((b) => b.rgb[k][ch])));
+        return { rgb, lab: rgbToLab(rgb), guess: guessColor(applyGains(rgb, this.gains), this.roBoundary), disp: s.disp };
+      });
+      this.disarm();
+      return out;
     }
   }
+
+  const DETECT_WIDTH = 240;
+  const median = (a) => { const b = a.slice().sort((m, n) => m - n); return b[b.length >> 1]; };
 
   function roundRect(ctx, x, y, w, h, r) {
     ctx.beginPath();
@@ -452,6 +823,6 @@
     ctx.closePath();
   }
 
-  root.CubeScanner = { Scanner, classify, classifyScan, repair, rgbToLab, guessColor, nameCenters, warmHue, gainsFromWhite, applyGains };
+  root.CubeScanner = { Scanner, brightnessMap, scoreGrid, trackGrid, findGrid, cellCenter, classify, classifyScan, repair, rgbToLab, guessColor, nameCenters, warmHue, gainsFromWhite, applyGains };
   if (typeof module !== 'undefined' && module.exports) module.exports = root.CubeScanner;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

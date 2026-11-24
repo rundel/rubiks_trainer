@@ -103,6 +103,8 @@ kbd { font: inherit; font-size: 0.7em; padding: 1px 6px; border-radius: 6px; bac
 .thumb i { width: 12px; height: 12px; border-radius: 2px; background: #e9ecf3; }
 .cam-settings { margin-top: 18px; color: var(--muted); font-size: 0.95rem; }
 .cam-settings label { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+.auto-check { display: flex; gap: 8px; align-items: center; margin-top: 12px; font-size: 0.95rem; color: var(--muted); cursor: pointer; }
+.auto-check input { width: 20px; height: 20px; }
 .cam-settings select { font: inherit; max-width: 230px; }
 
 .scan-confirm { background: #eef4ff; border: 2px solid #b3c8ff; border-radius: 14px; padding: 12px 14px; margin-top: 12px; }

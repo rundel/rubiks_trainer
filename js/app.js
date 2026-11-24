@@ -189,6 +189,8 @@
     scan = { step: 0, samples: {}, only: opts.only || null, fromSolve: !!opts.fromSolve, keep: opts.keep || null };
     if (!scan.only) scanner.roBoundary = null;
     scanner.paused = false;
+    scanner.autoCapture = $('#autoChk').checked;
+    scanner.arm();
     if (scan.only) {
       scan.samples = Object.assign({}, scanData.samples);
       scan.step = SCAN_STEPS.findIndex((s) => s.face === scan.only);
@@ -224,6 +226,19 @@
   }
   $('#camSelect').addEventListener('change', () => scanner.start($('#camSelect').value).catch(() => {}));
   $('#mirrorChk').addEventListener('change', (e) => { scanner.mirror = e.target.checked; });
+  $('#autoChk').checked = localStorage.getItem('cubeCoachAuto') !== '0';
+  $('#autoChk').addEventListener('change', (e) => {
+    try { localStorage.setItem('cubeCoachAuto', e.target.checked ? '1' : '0'); } catch (err) { /* storage may be unavailable */ }
+    scanner.autoCapture = e.target.checked && !!scan && !scan.test;
+    scanner.arm();
+    if (scan && !scan.test) renderScanStep();
+  });
+  // Take the picture by itself once the cube has been held still for a moment.
+  scanner.onSteady = () => {
+    if (currentScreen !== 'scan' || !scan || scan.test || scan.pending) return;
+    if (scan.step === 0 && !scan.only) scanCalibrate();
+    else capture();
+  };
   $('#debugChk').checked = scanner.debug = localStorage.getItem('cubeCoachDebug') === '1';
   $('#debugChk').addEventListener('change', (e) => {
     scanner.debug = e.target.checked;
@@ -264,8 +279,10 @@
       : '';
     $('#scanText').innerHTML = intro + list([
       `Hold the side with the {${st.expect}} center square up to the camera. Any way up is fine.`,
-      'Fill the squares with the stickers and hold still.',
-      needCal ? 'Press Calibrate.' : 'Press Capture.',
+      'The grid snaps onto the cube when it finds it. Hold the cube about as big as the squares.',
+      scanner.autoCapture
+        ? `Hold still while the ring fills up. I take the picture by myself${needCal ? ' (or press Calibrate)' : ' (or press Capture)'}.`
+        : needCal ? 'Hold still and press Calibrate.' : 'Hold still and press Capture.',
     ]) + (needCal
       ? `<p class="note-why"><b>Why calibrate?</b> ${fmt('I know the {W} center is white, so it shows me how your camera tints colors. That helps me read every other side.')}</p>`
       : '');
@@ -320,6 +337,7 @@
     scan = { test: true };
     scanner.roBoundary = null;
     scanner.paused = false;
+    scanner.autoCapture = false;
     show('scan');
     $('#scanPanel').hidden = true;
     $('#testPanel').hidden = false;
@@ -467,6 +485,7 @@
     scan.pending = null;
     scanner.paused = false;
     if (!ok) {
+      scanner.arm();
       renderScanStep();
       $('#scanWarn').innerHTML = fmt('OK! Try brighter, even light with no glare, hold the side so the stickers fill the squares, and press Calibrate again.');
       $('#scanWarn').hidden = false;
