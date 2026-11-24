@@ -24,6 +24,7 @@ Then open http://localhost:8000 in Chrome, Edge, Safari, or Firefox. Opening `in
 - Rescan at any time: "Rescan my cube" is always in the top bar while solving, and a whole new plan is worked out from wherever the cube is now. "Fix the colors" lets you edit the current state directly.
 - Step-by-step solving across seven stages (white cross, white corners, middle layer, yellow cross, yellow edges, yellow corner positions, yellow corner twists). Each stage opens with its goal, the method as a short numbered list, and a separate "why it works". Inside a stage, moves are grouped into parts (one per piece, such as "Place the white-red edge"), shown as a checklist of single-instruction steps, each with its own short reason. The piece being worked on is outlined in pink.
 - Practice scrambles and a "Learn the moves" page for notation (R, U', F2, and so on).
+- Move pictures can be shown flat (the front face with an arrow) or as an isometric 3D cube with the arrow running around the turning layer; the choice is remembered.
 - Progress is saved in the browser, so a solve can be resumed later.
 
 ## Layout

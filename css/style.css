@@ -205,6 +205,7 @@ kbd { font: inherit; font-size: 0.7em; padding: 1px 6px; border-radius: 6px; bac
 .learn-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
 .learn-btn { display: flex; align-items: center; gap: 10px; font: inherit; text-align: left; padding: 8px; border-radius: 12px; border: 2px solid var(--line); background: #fff; cursor: pointer; }
 .learn-btn:hover { border-color: var(--accent); }
+.learn-btn svg, .now-card svg, .mv svg { flex: 0 0 auto; }
 .learn-btn b { font-size: 1.2rem; font-family: ui-monospace, Menlo, monospace; }
 .learn-btn small { display: block; color: var(--muted); font-size: 0.78rem; line-height: 1.2; }
 
@@ -218,3 +219,11 @@ kbd { font: inherit; font-size: 0.7em; padding: 1px 6px; border-radius: 6px; bac
   .hero { flex-direction: column; text-align: center; }
   h1 { font-size: 1.9rem; }
 }
+
+/* Move picture style toggle */
+.icon-style { display: inline-flex; align-items: center; gap: 0; font-size: 0.9rem; color: var(--muted); }
+.icon-style > span { margin-right: 6px; }
+.icon-style button { font: inherit; font-weight: 700; border: 2px solid var(--line); background: transparent; color: var(--ink); padding: 4px 12px; cursor: pointer; }
+.icon-style button:first-of-type { border-radius: 10px 0 0 10px; }
+.icon-style button:last-of-type { border-radius: 0 10px 10px 0; border-left: 0; }
+.icon-style button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }

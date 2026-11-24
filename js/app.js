@@ -37,7 +37,67 @@
     y2: ['Turn the WHOLE cube around', 'The back comes to the front.'],
   };
 
+  // Move pictures can be drawn flat (the front face) or as an isometric cube.
+  let iconStyle = localStorage.getItem('cubeCoachIcons') === 'iso' ? 'iso' : 'flat';
   function moveIcon(m) {
+    return iconStyle === 'iso' ? moveIconIso(m) : moveIconFlat(m);
+  }
+
+  // Arrow paths run along the turning layer, over the edges of the cube, in cube coordinates
+  // (x right, y up, z toward you; the cube spans -1.5 to 1.5).
+  const ISO_ARROWS = {
+    U: [[1.5, 1, -0.75], [1.5, 1, 1.5], [-0.75, 1, 1.5]],
+    D: [[-0.75, -1, 1.5], [1.5, -1, 1.5], [1.5, -1, -0.75]],
+    R: [[1, -0.75, 1.5], [1, 1.5, 1.5], [1, 1.5, -0.75]],
+    L: [[-1, 1.5, -0.75], [-1, 1.5, 1.5], [-1, -0.75, 1.5]],
+    F: [[-0.75, 1.5, 1], [1.5, 1.5, 1], [1.5, -0.75, 1]],
+    B: [[1.5, -0.75, -1], [1.5, 1.5, -1], [-0.75, 1.5, -1]],
+    y: [[1.5, 0, -0.75], [1.5, 0, 1.5], [-0.75, 0, 1.5]],
+  };
+  function moveIconIso(m) {
+    const base = m[0];
+    const prime = m.includes("'");
+    const dbl = m.includes('2');
+    const def = C.MOVE_DEFS[base];
+    const k = 8.8, cos30 = Math.cos(Math.PI / 6);
+    const P = ([x, y, z]) => [32 + (x - z) * cos30 * k, 33 - y * k + (x + z) * 0.5 * k];
+    const pt = (p) => P(p).map((v) => v.toFixed(2)).join(',');
+    // Each visible face: its outward axis and how a cell (r, c) maps to cube coordinates.
+    const faces = [
+      { fill: ['#f4f5fa', '#ffe07a'], at: (r, c, s, t) => [c - 1 + s, 1.5, r - 1 + t], pos: (r, c) => [c - 1, 1, r - 1] },
+      { fill: ['#dfe3ee', '#f5c836'], at: (r, c, s, t) => [c - 1 + s, 1 - r - t, 1.5], pos: (r, c) => [c - 1, 1 - r, 1] },
+      { fill: ['#c6cddf', '#dcab17'], at: (r, c, s, t) => [1.5, 1 - r - t, 1 - c - s], pos: (r, c) => [1, 1 - r, 1 - c] },
+    ];
+    const outline = [[-1.5, 1.5, -1.5], [1.5, 1.5, -1.5], [1.5, -1.5, -1.5], [1.5, -1.5, 1.5], [-1.5, -1.5, 1.5], [-1.5, 1.5, 1.5]];
+    let cells = `<polygon points="${outline.map(pt).join(' ')}" fill="#1d2340" stroke="#1d2340" stroke-width="2" stroke-linejoin="round"/>`;
+    const e = 0.42;
+    for (const f of faces) {
+      for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) {
+        const on = def.layer(f.pos(r, c));
+        const quad = [[-e, -e], [e, -e], [e, e], [-e, e]].map(([s, t]) => pt(f.at(r, c, s, t)));
+        cells += `<polygon points="${quad.join(' ')}" fill="${f.fill[on ? 1 : 0]}" stroke-linejoin="round"/>`;
+      }
+    }
+    let path = (ISO_ARROWS[base] || []).map(P);
+    if (prime) path = path.reverse();
+    let arrow = '';
+    if (path.length) {
+      const [x2, y2] = path[path.length - 1];
+      const [x1, y1] = path[path.length - 2];
+      const a = Math.atan2(y2 - y1, x2 - x1);
+      const tip = [x2 + 3 * Math.cos(a), y2 + 3 * Math.sin(a)];
+      const head = 11;
+      const h = (d) => `${(tip[0] + head * Math.cos(a + d)).toFixed(2)},${(tip[1] + head * Math.sin(a + d)).toFixed(2)}`;
+      const d = path.map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(2)},${y.toFixed(2)}`).join(' ');
+      arrow = `<path d="${d}" fill="none" stroke="#fff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>` +
+        `<path d="${d}" fill="none" stroke="#c81d5e" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>` +
+        `<polygon points="${tip.map((v) => v.toFixed(2)).join(',')} ${h(Math.PI * 0.82)} ${h(-Math.PI * 0.82)}" fill="#c81d5e" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/>`;
+    }
+    const badge = dbl ? '<circle cx="54" cy="54" r="9" fill="#1d2340"/><text x="54" y="58" font-size="11" font-weight="800" text-anchor="middle" fill="#fff">×2</text>' : '';
+    return `<svg viewBox="0 0 64 64" width="48" height="48" aria-hidden="true">${cells}${arrow}${badge}</svg>`;
+  }
+
+  function moveIconFlat(m) {
     const base = m[0];
     const prime = m.includes("'");
     const dbl = m.includes('2');
@@ -901,12 +961,33 @@
 
   // ---------- Learn ----------
   let learnCube = null;
+  const LEARN_MOVES = ['R', "R'", 'L', "L'", 'U', "U'", 'D', "D'", 'F', "F'", 'B', "B'", 'R2', 'U2', 'y', "y'"];
+  function renderLearnGrid() {
+    $('#learnGrid').innerHTML = LEARN_MOVES.map((m) =>
+      `<button class="learn-btn" data-m="${m}">${moveIcon(m)}<span><b>${m}</b><small>${MOVE_TEXT[m][0]}</small></span></button>`).join('');
+  }
+
+  // ---------- Move picture style ----------
+  function syncIconToggles() {
+    document.querySelectorAll('.icon-style [data-style]').forEach((b) => {
+      b.setAttribute('aria-pressed', String(b.dataset.style === iconStyle));
+    });
+  }
+  document.querySelectorAll('.icon-style').forEach((box) => box.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-style]');
+    if (!b || b.dataset.style === iconStyle) return;
+    iconStyle = b.dataset.style;
+    try { localStorage.setItem('cubeCoachIcons', iconStyle); } catch (err) { /* storage may be unavailable */ }
+    syncIconToggles();
+    if (learnCube) renderLearnGrid();
+    if (practice.moves.length) $('#scrambleMoves').innerHTML = practice.moves.map((m) => moveChip(m, '')).join('');
+    if (currentScreen === 'solve' && plan && !busy && timeline[pos] && timeline[pos].type !== 'done') renderSolve();
+  }));
+  syncIconToggles();
   function initLearn() {
     if (learnCube) return;
     learnCube = new Cube3D($('#learnCube'), { size: 54 });
-    const moves = ['R', "R'", 'L', "L'", 'U', "U'", 'D', "D'", 'F', "F'", 'B', "B'", 'R2', 'U2', 'y', "y'"];
-    $('#learnGrid').innerHTML = moves.map((m) =>
-      `<button class="learn-btn" data-m="${m}">${moveIcon(m)}<span><b>${m}</b><small>${MOVE_TEXT[m][0]}</small></span></button>`).join('');
+    renderLearnGrid();
     let learnBusy = false;
     $('#learnGrid').addEventListener('click', async (e) => {
       const b = e.target.closest('[data-m]');
