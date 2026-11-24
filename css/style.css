@@ -80,13 +80,9 @@ kbd { font: inherit; font-size: 0.7em; padding: 1px 6px; border-radius: 6px; bac
 #resumeBtn { margin-top: 20px; font-size: 1.05rem; }
 
 /* 3D cube */
-.c3-scene { perspective: 900px; margin: 0 auto; display: flex; align-items: center; justify-content: center; touch-action: none; cursor: grab; user-select: none; }
+.c3-scene { margin: 0 auto; touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 .c3-scene:active { cursor: grabbing; }
-.c3-root { position: relative; width: var(--s); height: var(--s); transform-style: preserve-3d; }
-.c3-cubie { position: absolute; inset: 0; transform-style: preserve-3d; }
-.c3-face { position: absolute; inset: 0; background: #151515; border-radius: 4px; backface-visibility: hidden; }
-.c3-sticker { position: absolute; inset: 7%; border-radius: 14%; }
-.c3-sticker.hl { box-shadow: 0 0 0 3px #fff, 0 0 0 6px #ff2d95; }
+.c3-canvas { display: block; }
 
 /* Scan */
 .scan-layout { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(300px, 1fr); gap: 20px; align-items: start; }
