@@ -351,9 +351,13 @@
       : [-0.22, 0, 0.22].flatMap((a) => [-0.22, 0, 0.22].map((b) => [a, b]));
     const cells = [];
     for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) cells.push(offs.map(([du, dv]) => [c - 1 + du, r - 1 + dv]));
-    const lines = [];
+    // The 12 short line segments between neighboring cells, each sampled along its length.
+    const segs = [];
     const along = fast ? [0] : [-0.28, 0, 0.28];
-    for (const k of [-0.5, 0.5]) for (let j = -1; j <= 1; j++) for (const t of along) lines.push([k, j + t], [j + t, k]);
+    for (const k of [-0.5, 0.5]) for (let j = -1; j <= 1; j++) {
+      segs.push(along.map((t) => [k, j + t]));
+      segs.push(along.map((t) => [j + t, k]));
+    }
     const sides = [[], [], [], []];
     const around = fast ? [-0.25, 0.25] : [-0.3, 0, 0.3];
     for (let j = -1; j <= 1; j++) for (const t of around) {
@@ -362,7 +366,7 @@
       sides[2].push([j + t, -1.5]);
       sides[3].push([j + t, 1.5]);
     }
-    return { cells, lines, sides };
+    return { cells, segs, sides };
   }
   const PTS_FAST = gridPoints(true), PTS_FULL = gridPoints(false);
 
@@ -379,13 +383,26 @@
       return v[y * w + x];
     };
     // Quick test first: cell centers must be clearly brighter than the lines between them.
-    let lsum = 0;
-    for (const [gu, gv] of pts.lines) {
-      const val = at(gu, gv);
-      if (val < 0) return null;
-      lsum += val;
+    // Every line between cells must be dark. A grid that is off by a row has two segments that
+    // are not (in the row that is off the cube); one may be hidden by a finger, so use the
+    // second worst. Segments have 1 or 3 points; with 3, use their median.
+    let lsum = 0, ln = 0, seg1 = -1, seg2 = -1;
+    for (const seg of pts.segs) {
+      let m;
+      if (seg.length === 1) {
+        m = at(seg[0][0], seg[0][1]);
+        if (m < 0) return null;
+        lsum += m;
+      } else {
+        const a = at(seg[0][0], seg[0][1]), b = at(seg[1][0], seg[1][1]), c = at(seg[2][0], seg[2][1]);
+        if (a < 0 || b < 0 || c < 0) return null;
+        lsum += a + b + c;
+        m = a + b + c - Math.max(a, b, c) - Math.min(a, b, c);
+      }
+      ln += seg.length;
+      if (m > seg1) { seg2 = seg1; seg1 = m; } else if (m > seg2) seg2 = m;
     }
-    const line = lsum / pts.lines.length;
+    const line = lsum / ln;
     if (fast) {
       let csum = 0;
       for (const cell of pts.cells) {
@@ -422,11 +439,11 @@
       sdSum += sd;
       if (con > 18) bright++;
     }
-    const score = total / 9 - 0.6 * (sdSum / 9) - 0.7 * Math.max(0, worst - line);
+    const score = total / 9 - 0.6 * (sdSum / 9) - 0.1 * Math.max(0, worst - line) - 0.8 * Math.max(0, seg2 - line);
     return { score, bright, line };
   }
 
-  const FOUND_SCORE = 32, KEEP_SCORE = 22;
+  const FOUND_SCORE = 20, KEEP_SCORE = 14;
 
   function normAngle(p) {
     const q = Object.assign({}, p);
