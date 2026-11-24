@@ -16,6 +16,7 @@
   ];
   const toModel = (n) => [n[0], -n[1], n[2]];
   const PERSPECTIVE = 900;
+  const PAD = 0.6;
   const BODY = '#151515';
 
   // A rounded square in face coordinates, from -a to a, as a polygon.
@@ -78,7 +79,11 @@
       if (opts.mirror) this.scene.style.transform = 'scaleX(-1)';
       this.canvas = document.createElement('canvas');
       this.canvas.className = 'c3-canvas';
-      this.canvas.style.width = this.canvas.style.height = px + 'px';
+      // The canvas is larger than the space the cube takes in the layout, so its corners are not
+      // cut off when it is turned to a steep angle.
+      const pad = this.size * PAD;
+      this.canvas.style.width = this.canvas.style.height = px + 2 * pad + 'px';
+      this.canvas.style.margin = -pad + 'px';
       this.scene.appendChild(this.canvas);
       container.appendChild(this.scene);
       this.ctx = this.canvas.getContext('2d');
@@ -154,10 +159,10 @@
 
     draw() {
       const ctx = this.ctx;
-      const px = this.size * 5;
+      const px = this.size * (5 + 2 * PAD);
       const dpr = Math.min(3, root.devicePixelRatio || 1);
       const want = Math.round(px * dpr);
-      if (this.canvas.width !== want) { this.canvas.width = want; this.canvas.height = want; }
+      if (this.canvas.width !== want || this.canvas.height !== want) { this.canvas.width = want; this.canvas.height = want; }
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, px, px);
       const V = mul(rotX(this.rx), rotY(this.ry));
