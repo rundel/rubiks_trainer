@@ -381,9 +381,9 @@
   $('#testCalibrate').addEventListener('click', () => {
     const smp = scanner.capture();
     if (!smp) return;
-    const g = SC.gainsFromWhite(smp[4].rgb);
+    const g = SC.gainsFromWhite(smp[4].rgb, true);
     if (!g) {
-      $('#testCalib').textContent = 'That center did not look white. Show the side with the white center square and try again.';
+      $('#testCalib').textContent = 'That center is too dark to see. Show the side with the white center square in good light and try again.';
       return;
     }
     setGains(g);
@@ -463,9 +463,10 @@
     if (currentScreen !== 'scan' || !scan) return;
     const smp = scanner.capture();
     if (!smp) return;
-    const g = SC.gainsFromWhite(smp[4].rgb);
+    // The white side was asked for, so its center is taken to be white, whatever the camera shows.
+    const g = SC.gainsFromWhite(smp[4].rgb, true);
     if (!g) {
-      $('#scanWarn').innerHTML = fmt('That center square did not look {W}. Show the side with the {W} center square, fill the squares, and press Calibrate again.');
+      $('#scanWarn').innerHTML = fmt('That center square is too dark to see. Show the side with the {W} center square in good light and press Calibrate again.');
       $('#scanWarn').hidden = false;
       return;
     }

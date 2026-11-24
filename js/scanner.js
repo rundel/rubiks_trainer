@@ -103,12 +103,15 @@
   }
 
   // Per-channel gains that make a known white sticker neutral gray. Returns null if the sample does
-  // not look like a plausible white (too dark, or it would need a huge correction).
-  function gainsFromWhite(rgb) {
+  // not look like a plausible white (too dark, or it would need a huge correction). With trust, the
+  // sample is known to be white (the white side was asked for), so only a nearly black sample (no
+  // cube in view) is refused, and extreme corrections are limited instead.
+  function gainsFromWhite(rgb, trust) {
     const [, , v] = rgbToHsv(rgb);
-    if (v < 0.35) return null;
+    if (v < (trust ? 0.12 : 0.35)) return null;
     const avg = (rgb[0] + rgb[1] + rgb[2]) / 3;
     const g = rgb.map((x) => avg / Math.max(x, 1));
+    if (trust) return g.map((x) => Math.max(0.5, Math.min(2, x)));
     if (g.some((x) => x < 0.55 || x > 1.8)) return null;
     return g;
   }
@@ -119,7 +122,7 @@
   // using the rules of a real cube. opts.gains overrides the tint correction.
   function classifyScan(facesIn, opts) {
     opts = opts || {};
-    const g0 = opts.gains !== undefined ? opts.gains : gainsFromWhite(facesIn.U[4]);
+    const g0 = opts.gains !== undefined ? opts.gains : gainsFromWhite(facesIn.U[4], true);
     const facesRgb = {};
     C.FACES.forEach((f) => { facesRgb[f] = facesIn[f].map((rgb) => applyGains(rgb, g0)); });
     const toLab = (fr) => {
